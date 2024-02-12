@@ -1,0 +1,385 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "eks-handson-vpc"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ProjectName:
+    Type: String
+    Default: "eks-handson"
+
+  TagApplication:
+    Type: String
+    Default: "testApplication"
+  TagEnv:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  TagOwner:
+    Type: String
+    Default: "testOwner"
+  TagUser:
+    Type: String
+    Default: "testUser"
+
+  VpcCidr:
+    Description: The CIDR block for the vpc
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1aCidr:
+    Description: The CIDR block for the public subnet in AZ1
+    Type: String
+    Default: 10.0.0.0/24
+  PublicSubnet1cCidr:
+    Description: The CIDR block for the public subnet in AZ2
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1aCidr:
+    Description: The CIDR block for the private subnet in AZ1
+    Type: String
+    Default: 10.0.1.0/24
+  PrivateSubnet1cCidr:
+    Description: The CIDR block for the private subnet in AZ2
+    Type: String
+    Default: 10.0.3.0/24
+  AvailabilityZone1a:
+    Type: String
+    Default: ap-northeast-3a
+  AvailabilityZone1c:
+    Type: String
+    Default: ap-northeast-3c
+
+Resources:
+  # ------------------------------ #
+  # VPC
+  # ------------------------------ #
+  Vpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'vpc']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # InternetGateway
+  # ------------------------------ #
+  Igw:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'igw']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref Igw
+  # ------------------------------ #
+  # Subnet
+  # ------------------------------ #
+  PublicSubnet1a:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1aCidr
+      AvailabilityZone: !Ref AvailabilityZone1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'pblcsbnt1a']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PublicSubnet1c:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1cCidr
+      AvailabilityZone: !Ref AvailabilityZone1c
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'pblcsbnt1c']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PrivateSubnet1a:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1aCidr
+      AvailabilityZone: !Ref AvailabilityZone1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'prvtsbnt1a']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PrivateSubnet1c:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1cCidr
+      AvailabilityZone: !Ref AvailabilityZone1c
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'prvtsbnt1c']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # RouteTable
+  # ------------------------------ #
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'pblcrttbl']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+  PrivateRouteTable1a:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'prvtrttbl-1a']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PrivateRoute1a:
+    Type: 'AWS::EC2::Route'
+    DependsOn: 
+    - AttachGateway
+    - NatGateway1a
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1a
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1a
+  PrivateRouteTable1c:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'prvtrttbl-1a']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PrivateRoute1c:
+    Type: 'AWS::EC2::Route'
+    DependsOn: 
+    - AttachGateway
+    - NatGateway1c
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1c
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1c
+  # ------------------------------ #
+  # RouteTableAssociation
+  # ------------------------------ #
+  PublicSubnetRouteTableAssociation1a:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1a
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetRouteTableAssociation1c:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1c
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnetRouteTableAssociation1a:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1a
+      RouteTableId: !Ref PrivateRouteTable1a
+  PrivateSubnetRouteTableAssociation1c:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1c
+      RouteTableId: !Ref PrivateRouteTable1c
+  # ------------------------------ #
+  # SecurityGroup
+  # ------------------------------ #
+  EksSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Cluster to worker nodes
+      VpcId: !Ref Vpc
+  # ------------------------------ #
+  # NatGateway
+  # ------------------------------ #
+  NatGateway1a:
+    Type: 'AWS::EC2::NatGateway'
+    DependsOn:
+    - NatGatewayEIP1a
+    - AttachGateway
+    Properties:
+      AllocationId: !GetAtt 'NatGatewayEIP1a.AllocationId'
+      SubnetId: !Ref PublicSubnet1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'natgateway-1a']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  NatGateway1c:
+    Type: 'AWS::EC2::NatGateway'
+    DependsOn:
+    - NatGatewayEIP1c
+    - AttachGateway
+    Properties:
+      AllocationId: !GetAtt 'NatGatewayEIP1c.AllocationId'
+      SubnetId: !Ref PublicSubnet1c
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'natgateway-1c']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  NatGatewayEIP1a:
+    Type: 'AWS::EC2::EIP'
+    DependsOn:
+    - AttachGateway
+    Properties:
+      Domain: vpc
+  NatGatewayEIP1c:
+    Type: 'AWS::EC2::EIP'
+    DependsOn:
+    - AttachGateway
+    Properties:
+      Domain: vpc
+
+Outputs:
+  Vpc:
+    Value: !Ref 'Vpc'
+    Export:
+      Name: !Sub 'testVpc'
+  Igw:
+    Value: !Ref 'Igw'
+    Export:
+      Name: !Sub 'testIgw'
+  PublicSubnetIds:
+    Value: !Join [ ",", [ !Ref PublicSubnet1a, !Ref PublicSubnet1c ] ]
+    Export:
+      Name: !Sub 'testPublicSubnetIds'
+  PrivateSubnetIds:
+    Value: !Join [ ",", [ !Ref PrivateSubnet1a, !Ref PrivateSubnet1c ] ]
+    Export:
+      Name: !Sub 'testPrivateSubnetIds'
+  PublicSubnet1a:
+    Value: !Ref 'PublicSubnet1a'
+    Export:
+      Name: !Sub 'testPublicSubnet1a'
+  PublicSubnet1c:
+    Value: !Ref 'PublicSubnet1c'
+    Export:
+      Name: !Sub 'testPublicSubnet1c'
+  PrivateSubnet1a:
+    Value: !Ref 'PrivateSubnet1a'
+    Export:
+      Name: !Sub 'testPrivateSubnet1a'
+  PrivateSubnet1c:
+    Value: !Ref 'PrivateSubnet1c'
+    Export:
+      Name: !Sub 'testPrivateSubnet1c'
+  PublicRouteTable:
+    Value: !Ref 'PublicRouteTable'
+    Export:
+      Name: !Sub 'testPublicRouteTable'
+  PrivateRouteTable1a:
+    Value: !Ref 'PrivateRouteTable1a'
+    Export:
+      Name: !Sub 'testPrivateRouteTable1a'
+  PrivateRouteTable1c:
+    Value: !Ref 'PrivateRouteTable1c'
+    Export:
+      Name: !Sub 'testPrivateRouteTable1c'
+  EksSecurityGroup:
+    Value: !Ref 'EksSecurityGroup'
+    Export:
+      Name: !Sub 'testEksSecurityGroup'
+  NatGateway1a:
+    Value: !Ref 'NatGateway1a'
+    Export:
+      Name: !Sub 'testNatGateway1a'
+  NatGateway1c:
+    Value: !Ref 'NatGateway1c'
+    Export:
+      Name: !Sub 'testNatGateway1c'
+
+

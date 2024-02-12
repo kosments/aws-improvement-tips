@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "eks-handson-cluster"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ProjectName:
+    Type: String
+    Default: "eks-handson"
+
+  TagApplication:
+    Type: String
+    Default: "testApplicaation"
+  TagEnv:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  TagOwner:
+    Type: String
+    Default: "testOwner"
+  TagUser:
+    Type: String
+    Default: "testUser"
+
+  WorkerNodes:
+    Type: Number
+    Default: 1
+  KubernetesVersion:
+    Type: String
+    Default: 1.29
+
+Resources:
+  # ------------------------------ #
+  # EKS Cluster
+  # ------------------------------ #
+  EksCluster:
+    Type: 'AWS::EKS::Cluster'
+    Properties:
+      Name: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'eks-cluster']]
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt EksRole.Arn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !ImportValue testEksSecurityGroup
+        SubnetIds: !Split [ ',', !ImportValue testPrivateSubnetIds ]
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'eks-cluster']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+
+  # ------------------------------ #
+  # EKS NodeGroup
+  # ------------------------------ #
+  EksNodegroup:
+    Type: 'AWS::EKS::Nodegroup'
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'eks-cluster']]
+      NodeRole: !GetAtt EksNodeRole.Arn
+      ScalingConfig:
+        MinSize:
+          Ref: WorkerNodes
+        DesiredSize:
+          Ref: WorkerNodes
+        MaxSize:
+          Ref: WorkerNodes
+      Subnets: !Split [ ',', !ImportValue testPrivateSubnetIds ]
+
+  # ------------------------------ #
+  # EKS IAM Role
+  # ------------------------------ #
+  EksRole:
+    Type: 'AWS::IAM::Role'
+    Properties: 
+      RoleName: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'cluster-role']]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'cluster-role']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # EKS Node IAM Role
+  # ------------------------------ #
+  EksNodeRole:
+    Type: 'AWS::IAM::Role'
+    Properties: 
+      RoleName: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'node-role']]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ProjectName', 'node-role']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
