@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "approvetest-codecommit"
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: "approvetest"
+  TagEnv:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  TagOwner:
+    Type: String
+    Default: "testOwner"
+  TagUser:
+    Type: String
+    Default: "testUser"
+
+Resources:
+  # ------------------------------ #
+  # CodeCommitRepository
+  # ------------------------------ #
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'repo']]
+      Tags:
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+
+Outputs:    
+  CodeCommitRepository:
+    Value: !GetAtt CodeCommitRepository.Arn
+    Export:
+      Name: !Sub 'approvetestCodeCommitRepository'

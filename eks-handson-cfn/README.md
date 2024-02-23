@@ -1,4 +1,6 @@
-# Introduction
+# EKS Handson CloudFormation
+
+## Introduction
 
 Below are the steps to build an EKS cluster in the Osaka region using CloudFormation.
 

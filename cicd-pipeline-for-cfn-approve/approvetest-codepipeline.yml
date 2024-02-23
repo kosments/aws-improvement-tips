@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  CodePipeline Stack for Auto Deployment
+  "cicd-pipeline-for-cfn-stack-approvetest"
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: "approvetest"
+  TagEnv:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  TagOwner:
+    Type: String
+    Default: "testOwner"
+  TagUser:
+    Type: String
+    Default: "testUser"
+
+  CodeCommitRepoName:
+    Type: String
+    Default: "testOwner-approvetest-dev-testUser-repo"
+  ExpirationInDays:
+    Type: Number
+    Description: Number of days to retain artifacts
+    Default: "30"
+  Email:
+    Description: The email address where CodePipeline sends pipeline notifications
+    Type: String
+    Default: hogehoge@example.com
+  TemplateFileName:
+    Default: test-s3.yml
+    Description: The file name of the Project template
+    Type: String
+  StgStackName:
+    Default: approvetest-stg-root-stack
+    Description: A name for the stg Project stack
+    Type: String
+  StgStackConfig:
+    Default: stg-stack-conf.json
+    Description: The configuration file name for the stg Project stack
+    Type: String
+  PrdStackName:
+    Default: approvetest-prd-root-stack
+    Description: A name for the production Project stack
+    Type: String
+  PrdStackConfig:
+    Default: prd-stack-conf.json
+    Description: The configuration file name for the production Project stack
+    Type: String
+  ChangeSetName:
+    Default: approvetest-root-stack-changeset
+    Description: A name for the production Project stack change set
+    Type: String
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "CodePipeline Settings"
+        Parameters:
+          - CodeCommitRepoName
+          - ExpirationInDays
+          - Email
+      - Label:
+          default: "Stg Stack Settings"
+        Parameters:
+          - StgStackName
+          - TemplateFileName
+          - StgStackConfig
+      - Label:
+          default: "Production Stack Settings"
+        Parameters:
+          - ChangeSetName
+          - PrdStackName
+          - PrdStackConfig
+
+Resources:
+  # ------------------------------ #
+  # ArtifactStore S3Bucket
+  # ------------------------------ #
+  ArtifactStoreBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'artifact-bucket']]
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: !Ref ExpirationInDays
+            Id: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'retain-rule']]
+            Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'artifact-bucket']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # CodePipeline SNSTopic
+  # ------------------------------ #
+  CodePipelineSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'approve-topic']]
+      Subscription:
+        - Endpoint: !Ref Email
+          Protocol: email
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'approve-topic']]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # CodePipeline
+  # ------------------------------ #
+  MyPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', !Ref 'TagUser', 'cfn-pipeline']]
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactStoreBucket
+      Stages:
+        # ------------------------------ #
+        # Source Stage
+        # ------------------------------ #
+        - Name: Source
+          Actions:
+            - Name: TemplateSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !Ref CodeCommitRepoName
+                BranchName: main
+              OutputArtifacts:
+                - Name: TemplateSource
+              Region: !Ref AWS::Region
+              RunOrder: 1
+        # ------------------------------ #
+        # Stg Stage
+        # ------------------------------ #
+        - Name: StgStage
+          Actions:
+            - Name: CreateStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: TemplateSource
+              Configuration:
+                ActionMode: REPLACE_ON_FAILURE
+                RoleArn: !GetAtt CFNRole.Arn
+                StackName: !Ref StgStackName
+                TemplateConfiguration: !Sub "TemplateSource::${StgStackConfig}"
+                TemplatePath: !Sub "TemplateSource::${TemplateFileName}"
+              RunOrder: '1'
+            - Name: ApproveStgStack
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                NotificationArn: !Ref CodePipelineSNSTopic
+                CustomData: !Sub 'Do you want to create a change set against the production stack and delete the ${StgStackName} stack?'
+              RunOrder: '2'
+            - Name: DeleteStgStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: DELETE_ONLY
+                RoleArn: !GetAtt CFNRole.Arn
+                StackName: !Ref StgStackName
+              RunOrder: '3'
+        # ------------------------------ #
+        # Production Stage
+        # ------------------------------ #
+        - Name: PrdStage
+          Actions:
+            - Name: CreateChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: TemplateSource
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                RoleArn: !GetAtt CFNRole.Arn
+                StackName: !Ref PrdStackName
+                ChangeSetName: !Ref ChangeSetName
+                TemplateConfiguration: !Sub "TemplateSource::${PrdStackConfig}"
+                TemplatePath: !Sub "TemplateSource::${TemplateFileName}"
+              RunOrder: '1'
+            - Name: ApproveChangeSet
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                NotificationArn: !Ref CodePipelineSNSTopic
+                CustomData: !Sub 'A new change set was created for the ${PrdStackName} stack. Do you want to implement the changes?'
+              RunOrder: '2'
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                ChangeSetName: !Ref ChangeSetName
+                RoleArn: !GetAtt CFNRole.Arn
+                StackName: !Ref PrdStackName
+              RunOrder: '3'
+
+  # ------------------------------ #
+  # CodePipeline Role
+  # ------------------------------ #
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', 'pipeline-role']]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+              - codepipeline.amazonaws.com
+            Action: 
+            - sts:AssumeRole
+      Policies:
+        - PolicyName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', 'cfn-policy']]
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+            - Sid: cfnaccess
+              Effect: Allow
+              Action:
+                - s3:*
+                - cloudformation:CreateStack
+                - cloudformation:DescribeStacks
+                - cloudformation:DeleteStack
+                - cloudformation:UpdateStack
+                - cloudformation:CreateChangeSet
+                - cloudformation:ExecuteChangeSet
+                - cloudformation:DeleteChangeSet
+                - cloudformation:DescribeChangeSet
+                - cloudformation:SetStackPolicy
+                - iam:PassRole
+                - sns:Publish
+              Resource: '*'
+        - PolicyName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', 'codecommit-policy']]
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: codecommitaccess
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !Ref CodeCommitRepoName
+
+  # ------------------------------ #
+  # CodePipeline CfnRole
+  # ------------------------------ #
+  CFNRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', 'cfn-role']]
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: ['sts:AssumeRole']
+          Effect: Allow
+          Principal:
+            Service: [cloudformation.amazonaws.com]
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: !Join ['-', [!Ref 'TagOwner', !Ref 'TagApplication', !Ref 'TagEnv', 'nest-cfn-policy']]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - 'ec2:*'
+                  - 's3:*'
+                  - 'cloudformation:*'
+                  - 'iam:PassRole'
+                Effect: Allow
+                Resource: '*'
