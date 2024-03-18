@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CloudFormation template for AWS DataSync Location and Task'
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: "FSxDataTransfer"
+  TagEnv:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  TagOwner:
+    Type: String
+    Default: "testOwner"
+  TagUser:
+    Type: String
+    Default: "testUser"
+  SVMArn:
+    Type: String
+    Description: SVM ARN
+  LocationFSxSubdirectory:
+    Type: String
+    Description: FSx Subdirectory
+    Default: "/mountpoint/.snapshot/"
+  VpcId:
+    Type: String
+    Description: VPC ID
+  LocationS3Subdirectory:
+    Type: String
+    Description: S3 Subdirectory
+    Default: "/"
+  LocationS3StorageClass:
+    Type: String
+    Description: S3 Storage Class
+  LogGroupKmsId:
+    Type: String
+    Description: Log Group KMS ID
+    Default: "arn:aws:kms:region:AccountId:key/keyId"
+  LogGroupRetentionDays:
+    Type: Number
+    Description: Log Group Retention Days
+    Default: 30
+
+Resources:
+  # ------------------------------------------------------------ #
+  # DataSync Location FSxONTAP SecurityGroup
+  # ------------------------------------------------------------ #
+  DatasyncLocationFSxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DataSync Location FSxONTAP SecurityGroup
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 635
+          ToPort: 635
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 111
+          ToPort: 111
+          CidrIp: 0.0.0.0/0
+  # ------------------------------------------------------------ #
+  # DataSync Location FSxONTAP
+  # ------------------------------------------------------------ #   
+  DatasyncLocationFSx:
+    Type: AWS::DataSync::LocationFSxONTAP
+    Properties:
+      Protocol: 
+        NFS:
+          MountOptions:
+            Version: NFS3
+      SecurityGroupArns:
+        - !Join ["", [!Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/", !Ref DatasyncLocationFSxSecurityGroup]]
+      StorageVirtualMachineId: !Ref SVMArn
+      Subdirectory: !Ref LocationFSxSubdirectory
+
+  # ------------------------------------------------------------ #
+  # DataSync Location S3
+  # ------------------------------------------------------------ #   
+  DataSyncLocationS3:
+    Type: AWS::DataSync::LocationS3
+    Properties:
+      S3BucketArn: !ImportValue FSxDataTransferTmpS3BucketArn
+      S3Config:
+        BucketAccessRoleArn: !ImportValue FSxDataTransferTmpS3BucketAccessRoleArn
+      S3StorageClass: !Ref LocationS3StorageClass
+      Subdirectory: !Ref LocationS3Subdirectory
+
+  # ------------------------------------------------------------ #
+  # DataSync Task FSx to S3
+  # ------------------------------------------------------------ #   
+  FSxToS3Task:
+    Type: AWS::DataSync::Task
+    Properties:
+      Name: !join ["-", [!Ref TagApplication, !Ref TagEnv, "FSxToS3Task"]]
+      SourceLocationArn: !Ref DatasyncLocationFSx
+      Includes: 
+        - FilterType: SIMPLE_PATTERN
+          Value: "snapshot-*"
+      DestinationLocationArn: !Ref DataSyncLocationS3
+      Options:
+        TransferMode: "CHANGED"
+        VerifyMode: "ONLY_FILES_TRANSFERRED"
+        PreserveDeletedFiles: "PRESERVE"
+        OverwriteMode: "ALWAYS"
+        TaskQueueing: "ENABLED"
+      CloudWatchLogGroupArn: !Join ["", [!Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/datasync/", !Ref TagApplication, !Ref TagEnv, "/*"]]
+      Schedule: "cron(0 0 * * ? *)" #JST09:00
+
+  # ------------------------------------------------------------ #
+  # LogGroup DataSync Task
+  # ------------------------------------------------------------ #   
+  DataSyncTaskLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/datasync/", !Ref TagApplication, !Ref TagEnv, "/*"]]
+      RetentionInDays: !Ref LogGroupRetentionDays
+      KmsKeyId: !Ref LogGroupKmsId
+
+Outputs:
+  DatasyncLocationFSxSecurityGroup:
+    Value: !Ref DatasyncLocationFSxSecurityGroup
+    Export:
+      Name: DatasyncLocationFSxSecurityGroup
+  DataSyncLocationFSx:
+    Value: !Ref DatasyncLocationFSx
+    Export:
+      Name: DataSyncLocationFSx
+  DataSyncLocationS3:
+    Value: !Ref DataSyncLocationS3
+    Export:
+      Name: DataSyncLocationS3
+  DataSyncTaskLogGroup:
+    Value: !Ref DataSyncTaskLogGroup
+    Export:
+      Name: DataSyncTaskLogGroup
