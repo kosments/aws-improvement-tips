@@ -53,10 +53,10 @@ Resources:
             #!/bin/bash
             # Set variables
             aws configure set region ap-northeast-1
-            DB_NAME_PARAM="/wordpress/WP_DB_NAME"
-            DB_USER_PARAM="/wordpress/WP_DB_USER"
-            DB_PASSWORD_PARAM="/wordpress/WP_DB_PASSWORD"
-            DB_HOST_PARAM="/wordpress/WP_DB_HOST"
+            DB_NAME_PARAM="/wordpress/DB_NAME"
+            DB_USER_PARAM="/wordpress/DB_USER"
+            DB_PASSWORD_PARAM="/wordpress/DB_PASSWORD"
+            DB_HOST_PARAM="/wordpress/DB_HOST"
             EFS_ID_PARAM="/wordpress/EFS_ID"
             EFS_ID=$(aws ssm get-parameter --with-decryption --name $EFS_ID_PARAM --query "Parameter.Value" --output text)
             WEB_ROOT="/var/www/html/"
@@ -72,8 +72,11 @@ Resources:
             wget http://ja.wordpress.org/latest-ja.tar.gz ~/
             tar zxvf /latest-ja.tar.gz
             yum -y install amazon-efs-utils
-            # mount -t efs $EFS_ID $WEB_ROOT
-            cp -r /wordpress/* $WEB_ROOT
+
+            # Add EFS mount to /etc/fstab
+            echo "$EFS_ID:/ /var/www/html efs _netdev,noresvport,tls,iam 0 0" >> /etc/fstab
+            sudo mount -fav
+            mount -t efs $EFS_ID $WEB_ROOT
             chown apache:apache -R /var/www/html
             cd /var/www/html
 
@@ -87,10 +90,14 @@ Resources:
             cp $WP_CONFIG_SAMPLE $WP_CONFIG
 
             # Update wp-config.php file
-            sed -i -e "s/define( "DB_NAME", ".*" );/define("DB_NAME", "$DB_NAME");/" $WP_CONFIG
-            sed -i -e "s/define( "DB_USER", ".*" );/define("DB_USER", "$DB_USER");/" $WP_CONFIG
-            sed -i -e "s/define( "DB_PASSWORD", ".*" );/define("DB_PASSWORD", "$DB_PASSWORD");/" $WP_CONFIG
-            sed -i -e "s/define( "DB_HOST", ".*" );/define("DB_HOST", "$DB_HOST");/" $WP_CONFIG
+            sed -i -e "s/define( 'DB_NAME', '.*' );/define('DB_NAME', '$DB_NAME');/" $WP_CONFIG
+            sed -i -e "s/define( 'DB_USER', '.*' );/define('DB_USER', '$DB_USER');/" $WP_CONFIG
+            sed -i -e "s/define( 'DB_PASSWORD', '.*' );/define('DB_PASSWORD', '$DB_PASSWORD');/" $WP_CONFIG
+            sed -i -e "s/define( 'DB_HOST', '.*' );/define('DB_HOST', '$DB_HOST');/" $WP_CONFIG
+            #memory config fix
+            sed -i -e "s/pm = dynamic/pm = static/" /etc/php-fpm.d/www.conf
+            sed -i -e "s/pm.max_children = 50/pm.max_children = 3/" /etc/php-fpm.d/www.conf
+            systemctl restart  php-fpm
   # ------------------------------------------------------------#
   # AutoScaling Group
   # ------------------------------------------------------------#
