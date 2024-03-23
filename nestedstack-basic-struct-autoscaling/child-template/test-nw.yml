@@ -1,0 +1,332 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: test-nw
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: test
+  TagEnv:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+  TagOwner:
+    Type: String
+    Default: testowner
+  TagUser:
+    Type: String
+    Default: admin
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1aCidr:
+    Type: String
+    Default: 10.0.0.0/24
+  PublicSubnet1cCidr:
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1aCidr:
+    Type: String
+    Default: 10.0.1.0/24
+  PrivateSubnet1cCidr:
+    Type: String
+    Default: 10.0.3.0/24
+  AvailabilityZone1:
+    Type: String
+    Default: ap-northeast-1a
+  AvailabilityZone2:
+    Type: String
+    Default: ap-northeast-1c
+
+Resources:
+  # ------------------------------ #
+  # VPC
+  # ------------------------------ #
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, vpc]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # InternetGateway
+  # ------------------------------ #
+  Igw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, igw]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref Igw
+  # ------------------------------ #
+  # Subnet
+  # ------------------------------ #
+  PublicSubnet1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1aCidr
+      AvailabilityZone: !Ref AvailabilityZone1
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, pblcsbnt1a]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PublicSubnet1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1cCidr
+      AvailabilityZone: !Ref AvailabilityZone2
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, pblcsbnt1c]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PrivateSubnet1a:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1aCidr
+      AvailabilityZone: !Ref AvailabilityZone1
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, prvtsbnt1a]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PrivateSubnet1c:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1cCidr
+      AvailabilityZone: !Ref AvailabilityZone2
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, prvtsbnt1c]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, pblcrttbl]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+  # ------------------------------ #
+  # RouteTableAssociation
+  # ------------------------------ #
+  SubnetRouteTableAssociation1a:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1a
+      RouteTableId: !Ref PublicRouteTable
+  SubnetRouteTableAssociation1c:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1c
+      RouteTableId: !Ref PublicRouteTable
+
+  # ------------------------------ #
+  # Alb SecurityGroup
+  # ------------------------------ #
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-alb]]
+      GroupDescription: Security group for ALB
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow all http traffic
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow all https traffic
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-alb]]
+  # ------------------------------ #
+  # EC2 SecurityGroup
+  # ------------------------------ #
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-ec2]]
+      GroupDescription: Security group for WebApServerEC2
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: Allow all http traffic
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: Allow all https traffic
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: Allow all ssh traffic
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-ec2]]
+  # ------------------------------ #
+  # DBSecurityGroup
+  # ------------------------------ #
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-rds]]
+      VpcId: !Ref Vpc
+      GroupDescription: Security group for RDSInstance
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+          Description: Allow MySQL traffic from testEC2SecurityGroup
+      Tags: 
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-rds]]
+  # ------------------------------ #
+  # EFSSecurityGroup
+  # ------------------------------ #
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-efs]]
+      VpcId: !Ref Vpc
+      GroupDescription: Security group for EFS
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+          Description: Allow NFS traffic from testEC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, sg-for-efs]]
+
+Outputs:
+  Vpc:
+    Value: !Ref Vpc
+    Export:
+      Name: testVpc
+  Igw:
+    Value: !Ref Igw
+    Export:
+      Name: testIgw
+  PublicSubnetIds:
+    Value: !Join [ ",", [ !Ref PublicSubnet1a, !Ref PublicSubnet1c ] ]
+    Export:
+      Name: testPublicSubnetIds
+  PrivateSubnetIds:
+    Value: !Join [ ",", [ !Ref PrivateSubnet1a, !Ref PrivateSubnet1c ] ]
+    Export:
+      Name: testPrivateSubnetIds
+  PublicSubnet1a:
+    Value: !Ref PublicSubnet1a
+    Export:
+      Name: testPublicSubnet1a
+  PublicSubnet1c:
+    Value: !Ref PublicSubnet1c
+    Export:
+      Name: testPublicSubnet1c
+  PrivateSubnet1a:
+    Value: !Ref PrivateSubnet1a
+    Export:
+      Name: testPrivateSubnet1a
+  PrivateSubnet1c:
+    Value: !Ref PrivateSubnet1c
+    Export:
+      Name: testPrivateSubnet1c
+  PublicRouteTable:
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: testPublicRouteTable
+
+  AlbSecurityGroup:
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: testAlbSecurityGroup
+  EC2SecurityGroup:
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: testEC2SecurityGroup
+  DBSecurityGroup:
+    Value: !Ref DBSecurityGroup
+    Export:
+      Name: testDbSecurityGroup
+  EFSSecurityGroup:
+    Value: !Ref EFSSecurityGroup
+    Export:
+      Name: testEfsSecurityGroup

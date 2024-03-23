@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: test-rds
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: test
+  TagEnv:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+  TagOwner:
+    Type: String
+    Default: testowner
+  TagUser:
+    Type: String
+    Default: admin
+
+  DBInstanceID:
+    Type: String
+    Default: db
+    MinLength: 1
+    MaxLength: 63
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+  DBName:
+    Type: String
+    Default: wordpress
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+  DBUsername:
+    Type: String
+    Default: admin
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  # RdsSecretArn:
+  #   Type: String
+  #   Default: RdsSecretArn
+  # DBPassword:
+  #   Type: String
+  #   NoEcho: true
+  #   MinLength: 8
+  #   MaxLength: 41
+  #   AllowedPattern: "[a-zA-Z0-9]*"
+  #   ConstraintDescription: must contain only alphanumeric characters.
+  DBInstanceClass:
+    Default: db.t2.micro
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 65536
+    ConstraintDescription: must be between 20 and 65536 GiB.
+  DBEngineVersion:
+    Type: String
+    Default: 8.0.33
+
+Resources:
+  # ------------------------------ #
+  # RDSInstance
+  # ------------------------------ #
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: MySQL
+      DBInstanceIdentifier: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, !Ref DBInstanceID]]
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      # MasterUserPassword: !Sub "{{resolve:secretsmanager:${RdsSecretArn}:SecretString:password::}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${RDSSecret}:SecretString:password::}}"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      EngineVersion: !Ref DBEngineVersion
+      VPCSecurityGroups: 
+        - !ImportValue testDbSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MultiAZ: false
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, !Ref DBInstanceID]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # DBSubnetGroup
+  # ------------------------------ #
+  DBSubnetGroup: 
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: description
+      DBSubnetGroupName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, DBSubnetGroup]]
+      SubnetIds: !Split [",", !ImportValue testPrivateSubnetIds]
+      Tags: 
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, DBSubnetGroup]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+  # ------------------------------ #
+  # RDS DBInstance Secret
+  # ------------------------------ #
+  RDSSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, secret-for-rds-db]]
+      GenerateSecretString:
+        GenerateStringKey: password
+        PasswordLength: 32
+        SecretStringTemplate: "{}"
+        ExcludeCharacters: "\"'@/\\"
+
+Outputs:
+  RDSEndpoint:
+    Value: !GetAtt RDSInstance.Endpoint.Address
+    Export:
+      Name: testRDSEndpoint
+  GetSecretValueByCLI:
+    Value: !Sub |+
+        aws secretsmanager get-secret-value
+          --secret-id ${RDSSecret}
+          --region ${AWS::Region}
+          --query SecretString

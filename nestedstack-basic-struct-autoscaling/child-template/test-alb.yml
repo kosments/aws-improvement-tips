@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: test-alb
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: test
+  TagEnv:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+  TagOwner:
+    Type: String
+    Default: testowner
+  TagUser:
+    Type: String
+    Default: admin
+
+  CertificateArn:
+    Type: String
+    Default: arn:aws:acm:ap-northeast-1:012345678912:certificate/aaa-bbb-ccc
+
+Resources:
+  # ------------------------------ #
+  # ApplicationLoadBalancer
+  # ------------------------------ #
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, alb]]
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Split [",", !ImportValue testPublicSubnetIds]
+      SecurityGroups: 
+        - !ImportValue testAlbSecurityGroup
+      IpAddressType: ipv4
+      Tags:
+      -
+        Key: Name
+        Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, alb]]
+  # ------------------------------ #
+  # Alb Listener
+  # ------------------------------ #
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpTargetGroup
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpTargetGroup
+  # ------------------------------ #
+  # Alb TargetGroup
+  # ------------------------------ #
+  HttpTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, tg-for-alb]]
+      VpcId: !ImportValue testVpc
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagEnv, !Ref TagApplication, tg-for-alb]]
+
+Outputs:
+  ApplicationLoadBalancer:
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: testApplicationLoadBalancer
+  HttpTargetGroup:
+    Value: !Ref HttpTargetGroup
+    Export:
+      Name: testHttpTargetGroup

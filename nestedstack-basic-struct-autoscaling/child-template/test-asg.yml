@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: test-asg
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: test
+  TagEnv:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+  TagOwner:
+    Type: String
+    Default: testowner
+  TagUser:
+    Type: String
+    Default: admin
+
+  Keypair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: keypair-name
+  AmiId:
+    Type: String
+    Default: ami-06fdbb60c8e83aa5e
+    
+Resources:
+  # ------------------------------ #
+  # LaunchTemplate
+  # ------------------------------ #
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Join ["-", [!Ref TagEnv, !Ref TagApplication, launchtemplate]]
+      LaunchTemplateData:
+        KeyName: !Ref Keypair
+        ImageId: !Ref AmiId
+        InstanceType: t2.micro
+        IamInstanceProfile:
+          Arn: !GetAtt Ec2InstanceProfile.Arn
+        NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !ImportValue testPublicSubnet1a
+          Groups:
+            - !ImportValue testEC2SecurityGroup
+        TagSpecifications:
+        - ResourceType: instance
+          Tags:
+          - Key: Name
+            Value: !Join ["-", [!Ref TagEnv, !Ref TagApplication, ec2-webap-server]]
+        UserData: 
+          Fn::Base64: |
+            #!/bin/bash
+            # Set variables
+            aws configure set region ap-northeast-1
+            DB_NAME_PARAM="/wordpress/WP_DB_NAME"
+            DB_USER_PARAM="/wordpress/WP_DB_USER"
+            DB_PASSWORD_PARAM="/wordpress/WP_DB_PASSWORD"
+            DB_HOST_PARAM="/wordpress/WP_DB_HOST"
+            EFS_ID_PARAM="/wordpress/EFS_ID"
+            EFS_ID=$(aws ssm get-parameter --with-decryption --name $EFS_ID_PARAM --query "Parameter.Value" --output text)
+            WEB_ROOT="/var/www/html/"
+            WP_CONFIG_SAMPLE="$WEB_ROOTwp-config-sample.php"
+            WP_CONFIG="$WEB_ROOTwp-config.php"
+
+            yum -y update
+            amazon-linux-extras install php7.2 -y
+            yum -y install mysql httpd php-mbstring php-xml gd php-gd
+            systemctl enable httpd.service
+            systemctl start httpd.service
+            systemctl status httpd.service
+            wget http://ja.wordpress.org/latest-ja.tar.gz ~/
+            tar zxvf /latest-ja.tar.gz
+            yum -y install amazon-efs-utils
+            # mount -t efs $EFS_ID $WEB_ROOT
+            cp -r /wordpress/* $WEB_ROOT
+            chown apache:apache -R /var/www/html
+            cd /var/www/html
+
+            # Get parameter values from SSM Parameter Store
+            DB_NAME=$(aws ssm get-parameter --name $DB_NAME_PARAM --query "Parameter.Value" --output text)
+            DB_USER=$(aws ssm get-parameter --with-decryption --name $DB_USER_PARAM --query "Parameter.Value" --output text)
+            DB_PASSWORD=$(aws ssm get-parameter --with-decryption --name $DB_PASSWORD_PARAM --query "Parameter.Value" --output text)
+            DB_HOST=$(aws ssm get-parameter --with-decryption --name $DB_HOST_PARAM --query "Parameter.Value" --output text)
+
+            # Copy wp-config-sample.php to wp-config.php
+            cp $WP_CONFIG_SAMPLE $WP_CONFIG
+
+            # Update wp-config.php file
+            sed -i -e "s/define( "DB_NAME", ".*" );/define("DB_NAME", "$DB_NAME");/" $WP_CONFIG
+            sed -i -e "s/define( "DB_USER", ".*" );/define("DB_USER", "$DB_USER");/" $WP_CONFIG
+            sed -i -e "s/define( "DB_PASSWORD", ".*" );/define("DB_PASSWORD", "$DB_PASSWORD");/" $WP_CONFIG
+            sed -i -e "s/define( "DB_HOST", ".*" );/define("DB_HOST", "$DB_HOST");/" $WP_CONFIG
+  # ------------------------------------------------------------#
+  # AutoScaling Group
+  # ------------------------------------------------------------#
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, asg]]
+      VPCZoneIdentifier: !Split [",", !ImportValue testPublicSubnetIds]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      TargetGroupARNs: 
+        - !ImportValue testHttpTargetGroup
+      DesiredCapacity: 2
+      MaxSize: 2
+      MinSize: 2
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, asg]]
+          PropagateAtLaunch: true
+        - Key: Owner
+          Value: !Ref TagOwner
+          PropagateAtLaunch: true
+        - Key: Application
+          Value: !Ref TagApplication
+          PropagateAtLaunch: true
+        - Key: Env
+          Value: !Ref TagEnv
+          PropagateAtLaunch: true
+        - Key: User
+          Value: !Ref TagUser
+          PropagateAtLaunch: true
+  # ------------------------------ #
+  # EC2Instance IAMrole
+  # ------------------------------ #
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, ec2-role]]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+  Ec2Policies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, ec2-ssm-policy]]
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: 
+          - ssm:DescribeAssociation
+          - ssm:GetDeployablePatchSnapshotForInstance
+          - ssm:GetDocument
+          - ssm:DescribeDocument
+          - ssm:GetManifest
+          - ssm:GetParameter
+          - ssm:GetParameters
+          - ssm:ListAssociations
+          - ssm:ListInstanceAssociations
+          - ssm:PutInventory
+          - ssm:PutComplianceItems
+          - ssm:PutConfigurePackageResult
+          - ssm:UpdateAssociationStatus
+          - ssm:UpdateInstanceAssociationStatus
+          - ssm:UpdateInstanceInformation
+          Resource: "*"
+        - Effect: Allow
+          Action: 
+          - ssmmessages:CreateControlChannel
+          - ssmmessages:CreateDataChannel
+          - ssmmessages:OpenControlChannel
+          - ssmmessages:OpenDataChannel
+          Resource: "*"
+        - Effect: Allow
+          Action: 
+          - ec2messages:AcknowledgeMessage
+          - ec2messages:DeleteMessage
+          - ec2messages:FailMessage
+          - ec2messages:GetEndpoint
+          - ec2messages:GetMessages
+          - ec2messages:SendReply
+          Resource: "*"
+      Roles:
+      - !Ref Ec2Role
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - !Ref Ec2Role
+Outputs:
+  LaunchTemplate:
+    Value: !Ref LaunchTemplate
+    Export:
+      Name: testLaunchTemplate
+  AutoScalingGroup:
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: testAutoScalingGroup

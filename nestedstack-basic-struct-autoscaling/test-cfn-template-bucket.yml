@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  test-cfn-template-bucket
+
+Parameters:
+  TagApplication:
+    Type: String
+    Default: test
+  TagEnv:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+  TagOwner:
+    Type: String
+    Default: testowner
+  TagUser:
+    Type: String
+    Default: admin
+
+Resources:
+  # ------------------------------ #
+  # S3Bucket
+  # ------------------------------ #
+  CFnTemplateS3bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, cfn-template-bucket]]
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Ref TagOwner, !Ref TagApplication, !Ref TagEnv, !Ref TagUser, cfn-template-bucket]]
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+
+Outputs:    
+  CFnTemplateS3bucket:
+    Value: !Ref CFnTemplateS3bucket
+    Export:
+      Name: testCFnTemplateS3bucket

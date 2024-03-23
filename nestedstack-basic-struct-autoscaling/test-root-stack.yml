@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  test-root-stack
+
+Parameters: 
+
+  TagApplication:
+    Type: String
+    Default: test
+  TagEnv:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+  TagOwner:
+    Type: String
+    Default: testowner
+  TagUser:
+    Type: String
+    Default: admin
+
+  # ---------------------------------------------------------------------- #
+  # VPC Parameters
+  # ---------------------------------------------------------------------- #
+  TemplateVPC:
+    Type: String
+    Default: https://testowner-test-dev-admin-cfn-template-bucket.s3.ap-northeast-1.amazonaws.com/codebuild/test-nw.yml
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1aCidr:
+    Type: String
+    Default: 10.0.0.0/24
+  PublicSubnet1cCidr:
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1aCidr:
+    Type: String
+    Default: 10.0.1.0/24
+  PrivateSubnet1cCidr:
+    Type: String
+    Default: 10.0.3.0/24
+  AvailabilityZone1:
+    Type: String
+    Default: ap-northeast-1a
+  AvailabilityZone2:
+    Type: String
+    Default: ap-northeast-1c
+
+  # ---------------------------------------------------------------------- #
+  # RDS Parameters
+  # ---------------------------------------------------------------------- #
+  TemplateRDS:
+    Type: String
+    Default: https://testowner-test-dev-admin-cfn-template-bucket.s3.ap-northeast-1.amazonaws.com/codebuild/test-rds.yml
+  DBInstanceID:
+    Type: String
+    Default: db
+    MinLength: "1"
+    MaxLength: "63"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+  DBName:
+    Type: String
+    Default: mydb
+    MinLength: "1"
+    MaxLength: "64"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+  DBUsername:
+    Type: String
+    Default: admin
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  # RdsSecretArn:
+  #   Type: String
+  #   Default: RdsSecretArn
+  DBInstanceClass:
+    Default: db.t2.micro
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: "20"
+    MaxValue: "65536"
+    ConstraintDescription: must be between 20 and 65536 GiB.
+  DBEngineVersion:
+    Type: String
+    Default: 8.0.33
+
+  # ---------------------------------------------------------------------- #
+  # ALB Parameters
+  # ---------------------------------------------------------------------- #
+  TemplateALB:
+    Type: String
+    Default: https://testowner-test-dev-admin-cfn-template-bucket.s3.ap-northeast-1.amazonaws.com/codebuild/test-alb.yml
+  CertificateArn:
+    Type: String
+    Default: arn:aws:acm:ap-northeast-1:461097413659:certificate/4b5cfeb8-9f7a-4b0e-b9b2-df0bb975cbf3
+
+  # ---------------------------------------------------------------------- #
+  # ASG Parameters
+  # ---------------------------------------------------------------------- #
+  TemplateASG:
+    Type: String
+    Default: https://testowner-test-dev-admin-cfn-template-bucket.s3.ap-northeast-1.amazonaws.com/codebuild/test-asg.yml
+  Keypair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: iti2-awsstudy-dev-keypair-20230922
+  AmiId:
+    Type: String
+    Default: ami-06fdbb60c8e83aa5e
+
+Resources:
+  # ---------------------------------------------------------------------- #
+  # VPC,Subnet,igw,routetable
+  # ---------------------------------------------------------------------- #
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateVPC
+      Parameters:
+        TagApplication: !Ref TagApplication
+        TagEnv: !Ref TagEnv
+        TagOwner: !Ref TagOwner
+        TagUser: !Ref TagUser
+        VpcCidr: !Ref VpcCidr
+        PublicSubnet1aCidr: !Ref PublicSubnet1aCidr
+        PublicSubnet1cCidr: !Ref PublicSubnet1cCidr
+        PrivateSubnet1aCidr: !Ref PrivateSubnet1aCidr
+        PrivateSubnet1cCidr: !Ref PrivateSubnet1cCidr
+        AvailabilityZone1: !Ref AvailabilityZone1
+        AvailabilityZone2: !Ref AvailabilityZone2
+
+  # ---------------------------------------------------------------------- #
+  # RDS,SubnetGroup
+  # ---------------------------------------------------------------------- #
+  RDS:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateRDS
+      Parameters:
+        TagApplication: !Ref TagApplication
+        TagEnv: !Ref TagEnv
+        TagOwner: !Ref TagOwner
+        TagUser: !Ref TagUser
+        DBInstanceID: !Ref DBInstanceID
+        DBName: !Ref DBName
+        # RdsSecretArn: !Ref RdsSecretArn
+        DBUsername: !Ref DBUsername
+        DBInstanceClass: !Ref DBInstanceClass
+        DBAllocatedStorage: !Ref DBAllocatedStorage
+        DBEngineVersion: !Ref DBEngineVersion
+    DependsOn: VPC
+
+  # ---------------------------------------------------------------------- #
+  # ALB,Lister,TargetGroup
+  # ---------------------------------------------------------------------- #
+  ALB:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateALB
+      Parameters:
+        TagApplication: !Ref TagApplication
+        TagEnv: !Ref TagEnv
+        TagOwner: !Ref TagOwner
+        TagUser: !Ref TagUser
+        CertificateArn: !Ref CertificateArn
+    DependsOn: RDS
+
+  # ---------------------------------------------------------------------- #
+  # LaunchTemplate,AutoScaling Group,Alb SecurityGroup,EC2 SecurityGroup
+  # ---------------------------------------------------------------------- #
+  ASG:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateASG
+      Parameters:
+        TagApplication: !Ref TagApplication
+        TagEnv: !Ref TagEnv
+        TagOwner: !Ref TagOwner
+        TagUser: !Ref TagUser
+        Keypair: !Ref Keypair
+        AmiId: !Ref AmiId
+    DependsOn: ALB
