@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "handson-for-ecs-vpc-sbnt-igw-rttbl-sg"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "test-ecs"
+
+  VpcCidr:
+    Description: The CIDR block for the vpc
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1aCidr:
+    Description: The CIDR block for the public subnet in AZ1
+    Type: String
+    Default: 10.0.0.0/24
+  PublicSubnet1cCidr:
+    Description: The CIDR block for the public subnet in AZ2
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1aCidr:
+    Description: The CIDR block for the private subnet in AZ1
+    Type: String
+    Default: 10.0.1.0/24
+  PrivateSubnet1cCidr:
+    Description: The CIDR block for the private subnet in AZ2
+    Type: String
+    Default: 10.0.3.0/24
+
+Resources:
+  # ------------------------------ #
+  # VPC
+  # ------------------------------ #
+  Vpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'vpc']]
+  # ------------------------------ #
+  # InternetGateway
+  # ------------------------------ #
+  Igw:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'igw']]
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref Igw
+  # ------------------------------ #
+  # Subnet
+  # ------------------------------ #
+  PublicSubnet1a:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1aCidr
+      AvailabilityZone: ap-northeast-1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'pblcsbnt1a']]
+  PublicSubnet1c:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1cCidr
+      AvailabilityZone: ap-northeast-1c
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'pblcsbnt1c']]
+  PrivateSubnet1a:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1aCidr
+      AvailabilityZone: ap-northeast-1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'prvtsbnt1a']]
+  PrivateSubnet1c:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1cCidr
+      AvailabilityZone: ap-northeast-1c
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'prvtsbnt1c']]
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'pblcrttbl']]
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+  # ------------------------------ #
+  # RouteTableAssociation
+  # ------------------------------ #
+  SubnetRouteTableAssociation1a:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1a
+      RouteTableId: !Ref PublicRouteTable
+  SubnetRouteTableAssociation1c:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1c
+      RouteTableId: !Ref PublicRouteTable
+  # ------------------------------ #
+  # ECS SecurityGroup
+  # ------------------------------ #
+  EcsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ecs']]
+      GroupDescription: Security group for Ecs
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow all http traffic
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow all https traffic
+
+Outputs:
+  Vpc:
+    Value: !Ref 'Vpc'
+    Export:
+      Name: !Sub 'TestVpc'
+  Igw:
+    Value: !Ref 'Igw'
+    Export:
+      Name: !Sub 'TestIgw'
+  PublicSubnet1a:
+    Value: !Ref 'PublicSubnet1a'
+    Export:
+      Name: !Sub 'TestPublicSubnet1a'
+  PublicSubnet1c:
+    Value: !Ref 'PublicSubnet1c'
+    Export:
+      Name: !Sub 'TestPublicSubnet1c'
+  PrivateSubnet1a:
+    Value: !Ref 'PrivateSubnet1a'
+    Export:
+      Name: !Sub 'TestPrivateSubnet1a'
+  PrivateSubnet1c:
+    Value: !Ref 'PrivateSubnet1c'
+    Export:
+      Name: !Sub 'TestPrivateSubnet1c'
+  PublicRouteTable:
+    Value: !Ref 'PublicRouteTable'
+    Export:
+      Name: !Sub 'TestPublicRouteTable'
+  EcsSecurityGroup:
+    Value: !Ref EcsSecurityGroup
+    Export:
+      Name: !Sub 'TestEcsSecurityGroup'

@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "handson-for-ecs-cluster"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "test-ecs"
+
+Resources:
+  # ------------------------------ #
+  # ApplicationLoadBalancer
+  # ------------------------------ #
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: !Join ['-', [!Ref Env, !Ref ResourceName, 'alb']]
+      Subnets:
+        - !ImportValue TestPublicSubnet1a
+        - !ImportValue TestPublicSubnet1c
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'alb']]
+  HttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpTargetGroup
+  # ------------------------------ #
+  # TargetGroup
+  # ------------------------------ #
+  HttpTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: !Join ['-', [!Ref Env, !Ref ResourceName, 'tg']]
+      VpcId: !ImportValue TestVpc
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'tg']]
+  # ------------------------------ #
+  # Alb SecurityGroup
+  # ------------------------------ #
+  AlbSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-alb']]
+      GroupDescription: Security group for ALB
+      VpcId: !ImportValue TestVpc
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+          Description: Allow all traffic
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-alb']]
+
+  # ------------------------------ #
+  #  ECS Cluster
+  # ------------------------------ #
+  ECSCluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'ecs-cluster']]
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Env
+          Value: !Ref Env
+  # ------------------------------ #
+  #  ECS LogGroup
+  # ------------------------------ #
+  ECSLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub "/ecs/logs/${ResourceName}"
+
+Outputs:
+  ApplicationLoadBalancer:
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub 'TestEcsApplicationLoadBalancer'
+  HttpTargetGroup:
+    Value: !Ref HttpTargetGroup
+    Export:
+      Name: !Sub 'TestEcsHttpTargetGroup'
+  AlbSecurityGroup:
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub 'TestEcsAlbSecurityGroup'
+
+  ECSCluster:
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub 'TestECSCluster'
+  ECSLogGroup:
+    Value: !Ref ECSLogGroup
+    Export:
+      Name: !Sub 'TestECSLogGroup'

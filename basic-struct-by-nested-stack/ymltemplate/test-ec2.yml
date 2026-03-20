@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "test-ec2"
+
+Parameters:
+  Env:
+    Type: String
+    Default: 'dev'
+    AllowedValues: ['dev', 'stg', 'prd']
+  ResourceName:
+    Type: String
+    Default: 'test-project'
+  AmiId:
+    Description: Choose from AMI catalog.
+    Type: String
+    Default: ami-05a56ce08feadf9c4
+
+Resources:
+  # ------------------------------ #
+  # PublicSubnet1a EC2Instance
+  # ------------------------------ #
+  PublicSubnet1aEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref NewKeyPair
+      ImageId: !Ref AmiId
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-web-server-1a']]
+      UserData: 
+        Fn::Base64: |
+          #!/bin/bash
+          sudo su -
+          sudo dnf -y update
+          sudo yum -y install php
+          sudo dnf -y install mariadb105
+          sudo yum -y install httpd
+          sudo sh -c 'echo "Sample Page of ap-northeast-1a" > /var/www/html/index.php'
+          sudo systemctl start httpd
+          sudo systemctl enable httpd
+          sudo systemctl restart httpd
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !ImportValue testPublicSubnet1a
+          GroupSet:
+            - !ImportValue testEC2SecurityGroup
+  # ------------------------------ #
+  # PublicSubnet1c EC2Instance
+  # ------------------------------ #
+  PublicSubnet1cEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref NewKeyPair
+      ImageId: !Ref AmiId
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-web-server-1c']]
+      UserData: 
+        Fn::Base64: |
+          #!/bin/bash
+          sudo su -
+          sudo dnf -y update
+          sudo yum -y install php
+          sudo dnf -y install mariadb105
+          sudo yum -y install httpd
+          sudo sh -c 'echo "Sample Page of ap-northeast-1c" > /var/www/html/index.php'
+          sudo systemctl start httpd
+          sudo systemctl enable httpd
+          sudo systemctl restart httpd
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !ImportValue testPublicSubnet1c
+          GroupSet:
+            - !ImportValue testEC2SecurityGroup
+  # ------------------------------ #
+  # KeyPair
+  # ------------------------------ #
+  NewKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: MyKeyPair
+
+  # ------------------------------ #
+  # EC2Instance IAMrole
+  # ------------------------------ #
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-role']]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref Ec2Role
+
+Outputs:
+  PublicSubnet1aEc2Instance:
+    Value: !Ref PublicSubnet1aEc2Instance
+    Export:
+      Name: !Sub 'testPublicSubnet1aEc2Instance'
+  PublicSubnet1cEc2Instance:
+    Value: !Ref PublicSubnet1cEc2Instance
+    Export:
+      Name: !Sub 'testPublicSubnet1cEc2Instance'

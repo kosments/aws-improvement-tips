@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "forward-proxy-vpc"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "proxy"
+
+  VpcCidr:
+    Description: The CIDR block for the vpc
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1aCidr:
+    Description: The CIDR block for the public subnet in AZ1
+    Type: String
+    Default: 10.0.0.0/24
+  PrivateSubnet1aCidr:
+    Description: The CIDR block for the private subnet in AZ1
+    Type: String
+    Default: 10.0.1.0/24
+
+Resources:
+  # ------------------------------ #
+  # VPC
+  # ------------------------------ #
+  Vpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'vpc']]
+  # ------------------------------ #
+  # InternetGateway
+  # ------------------------------ #
+  Igw:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'igw']]
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref Igw
+  # ------------------------------ #
+  # Subnet
+  # ------------------------------ #
+  PublicSubnet1a:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnet1aCidr
+      AvailabilityZone: ap-northeast-1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'pblcsbnt1a']]
+  PrivateSubnet1a:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnet1aCidr
+      AvailabilityZone: ap-northeast-1a
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'prvtsbnt1a']]
+  # ------------------------------ #
+  # RouteTable
+  # ------------------------------ #
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'pblcrttbl']]
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'prvtrttbl']]
+  # ------------------------------ #
+  # RouteTableAssociation
+  # ------------------------------ #
+  PublicSubnetRouteTableAssociation1a:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1a
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnetRouteTableAssociation1a:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1a
+      RouteTableId: !Ref PrivateRouteTable
+
+Outputs:
+  Vpc:
+    Value: !Ref 'Vpc'
+    Export:
+      Name: !Sub 'Vpc'
+  Igw:
+    Value: !Ref 'Igw'
+    Export:
+      Name: !Sub 'Igw'
+  PublicSubnet1a:
+    Value: !Ref 'PublicSubnet1a'
+    Export:
+      Name: !Sub 'PublicSubnet1a'
+  PrivateSubnet1a:
+    Value: !Ref 'PrivateSubnet1a'
+    Export:
+      Name: !Sub 'PrivateSubnet1a'
+  PublicRouteTable:
+    Value: !Ref 'PublicRouteTable'
+    Export:
+      Name: !Sub 'PublicRouteTable'
+  PrivateRouteTable:
+    Value: !Ref 'PrivateRouteTable'
+    Export:
+      Name: !Sub 'PrivateRouteTable'

@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "handson-for-ecs-service"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "test-ecs" 
+  EcsImage:
+    Type: String
+
+Resources:
+  # ------------------------------ #
+  #  ECS Task
+  # ------------------------------ #
+  ECSTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Name: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'task']]
+          Essential: true
+          Image: !Ref EcsImage
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !ImportValue TestECSLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: !Ref ResourceName
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+      Cpu: 256
+      ExecutionRoleArn: !GetAtt ECSRole.Arn
+      Family: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'task-definition-family']]
+      Memory: 512
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+  # ------------------------------ #
+  #  ECS Role
+  # ------------------------------ #
+  ECSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'role']]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  # ------------------------------ #
+  #  ECS Service
+  # ------------------------------ #
+  ECSService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      ServiceName: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'ecs-service']]
+      Cluster: !ImportValue TestECSCluster
+      DesiredCount: 2
+      LaunchType: FARGATE
+      LoadBalancers:
+        -
+          TargetGroupArn: !ImportValue TestEcsHttpTargetGroup
+          ContainerPort: 80
+          ContainerName: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'task']]
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          # AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue TestEcsAlbSecurityGroup
+          Subnets:
+            - !ImportValue TestPublicSubnet1a
+            - !ImportValue TestPublicSubnet1c
+      TaskDefinition: !Ref ECSTaskDefinition
+      HealthCheckGracePeriodSeconds: 120

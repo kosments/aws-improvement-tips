@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "forward-proxy-ec2"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "proxy"
+  Keypair:
+    Type: AWS::EC2::KeyPair::KeyName
+  AmiId:
+    Type: String
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnetId:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  # ------------------------------ #
+  # Proxy LaunchTemplate
+  # ------------------------------ #
+  ProxyLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Join ['-', [!Ref Env, !Ref ResourceName, 'proxy-launchtemplate']]
+      LaunchTemplateData:
+        KeyName: !Ref Keypair
+        ImageId: !Ref AmiId
+        InstanceType: t2.micro
+        IamInstanceProfile:
+          Arn: !GetAtt Ec2InstanceProfile.Arn
+        NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref PublicSubnetId
+          Groups:
+            - !Ref EC2SecurityGroup
+        TagSpecifications:
+        - ResourceType: instance
+          Tags:
+          - Key: Name
+            Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-proxy']]
+        UserData: 
+          Fn::Base64: |
+            #!/bin/bash
+            yum -y update
+            yum -y install squid
+            # Squid設定ファイルのバックアップ
+            cp /etc/squid/squid.conf /etc/squid/squid.conf.bak
+            # Squid設定ファイルの編集
+            sed -i 's/#cache_dir ufs \/var\/spool\/squid 100 16 256/cache_dir ufs \/var\/spool\/squid 100 16 256/g' /etc/squid/squid.conf
+            echo ".google.com" >> /etc/squid/blacklist.acl
+            echo -e "acl BLACKLIST dstdomain \"/etc/squid/blacklist.acl\"\nhttp_access deny BLACKLIST\nhttp_access allow all\n$(cat /etc/squid/squid.conf)" > /etc/squid/squid.conf
+            systemctl start squid
+            systemctl enable squid
+            lsof -i:3128
+  # ------------------------------ #
+  # Client LaunchTemplate
+  # ------------------------------ #
+  ClientLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Join ['-', [!Ref Env, !Ref ResourceName, 'client-launchtemplate']]
+      LaunchTemplateData:
+        KeyName: !Ref Keypair
+        ImageId: !Ref AmiId
+        InstanceType: t2.micro
+        IamInstanceProfile:
+          Arn: !GetAtt Ec2InstanceProfile.Arn
+        NetworkInterfaces: 
+        - AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          SubnetId: !Ref PrivateSubnetId
+          Groups:
+            - !Ref EC2SecurityGroup
+        TagSpecifications:
+        - ResourceType: instance
+          Tags:
+          - Key: Name
+            Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-client']]
+        UserData: 
+          Fn::Base64: |
+            #!/bin/bash
+            echo 'proxy = "http://10.0.0.x:3128"' >> ~/.curlrc
+  # ------------------------------ #
+  # Proxy EC2Instance
+  # ------------------------------ #
+  ProxyEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ProxyLaunchTemplate
+        Version: !GetAtt ProxyLaunchTemplate.LatestVersionNumber
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref PublicSubnetId
+          GroupSet:
+            - !Ref EC2SecurityGroup
+  # ------------------------------ #
+  # Client EC2Instance
+  # ------------------------------ #
+  ClientEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ClientLaunchTemplate
+        Version: !GetAtt ClientLaunchTemplate.LatestVersionNumber
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          SubnetId: !Ref PrivateSubnetId
+          GroupSet:
+            - !Ref EC2SecurityGroup
+  # ------------------------------ #
+  # EC2 SecurityGroup
+  # ------------------------------ #
+  EC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ec2']]
+      GroupDescription: Security group for WebApServerEC2
+      VpcId: !ImportValue Vpc
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ec2']]
+  # ------------------------------ #
+  # SSM Endpoint SecurityGroup
+  # ------------------------------ #
+  SsmEndpointSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !ImportValue Vpc
+      GroupName: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ssm-endpoint']]
+      GroupDescription: Security group for SsmEndpoint
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ssm-endpoint']]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow https traffic
+  # ------------------------------ #
+  # VPC Endpoint
+  # ------------------------------ #
+  EC2Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue Vpc
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      SecurityGroupIds:
+        - !Ref SsmEndpointSecurityGroup
+      # Tags:
+      # - Key: Name
+      #   Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'endpoint-ec2']]
+  EC2MessageEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2messages"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue Vpc
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      SecurityGroupIds:
+        - !Ref SsmEndpointSecurityGroup
+      # Tags:
+      # - Key: Name
+      #   Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'endpoint-ec2messages']]
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue Vpc
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      SecurityGroupIds:
+        - !Ref SsmEndpointSecurityGroup
+      # Tags:
+      # - Key: Name
+      #   Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'endpoint-ssm']]
+  SsmAgentEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssmmessages"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue Vpc
+      SubnetIds:
+        - !Ref PrivateSubnetId
+      SecurityGroupIds:
+        - !Ref SsmEndpointSecurityGroup
+      # Tags:
+      # - Key: Name
+      #   Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'endpoint-ssmagent']]
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcId: !ImportValue Vpc
+      RouteTableIds:
+        - !ImportValue PrivateRouteTable
+      # Tags:
+      # - Key: Name
+      #   Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'endpoint-s3']]
+  # ------------------------------ #
+  # EC2Instance IAMrole
+  # ------------------------------ #
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-role']]
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - s3.amazonaws.com
+  Ec2Policies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Join ['-', [!Ref Env, !Ref ResourceName, 'ec2-ssm-policy']]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: "Allow"
+          Action: 
+          - "ssm:DescribeAssociation"
+          - "ssm:GetDeployablePatchSnapshotForInstance"
+          - "ssm:GetDocument"
+          - "ssm:DescribeDocument"
+          - "ssm:GetManifest"
+          - "ssm:GetParameter"
+          - "ssm:GetParameters"
+          - "ssm:ListAssociations"
+          - "ssm:ListInstanceAssociations"
+          - "ssm:PutInventory"
+          - "ssm:PutComplianceItems"
+          - "ssm:PutConfigurePackageResult"
+          - "ssm:UpdateAssociationStatus"
+          - "ssm:UpdateInstanceAssociationStatus"
+          - "ssm:UpdateInstanceInformation"
+          Resource: "*"
+        - Effect: "Allow"
+          Action: 
+          - "ssmmessages:CreateControlChannel"
+          - "ssmmessages:CreateDataChannel"
+          - "ssmmessages:OpenControlChannel"
+          - "ssmmessages:OpenDataChannel"
+          Resource: "*"
+        - Effect: "Allow"
+          Action: 
+          - "ec2messages:AcknowledgeMessage"
+          - "ec2messages:DeleteMessage"
+          - "ec2messages:FailMessage"
+          - "ec2messages:GetEndpoint"
+          - "ec2messages:GetMessages"
+          - "ec2messages:SendReply"
+          Resource: "*"
+        - Effect: "Allow"
+          Action: 
+          - "s3:Getobject"
+          Resource: "*"
+      Roles:
+      - !Ref Ec2Role
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref Ec2Role
+
+Outputs:
+  ProxyLaunchTemplate:
+    Value: !Ref ProxyLaunchTemplate
+    Export:
+      Name: !Sub 'ProxyLaunchTemplate'
+  ClientLaunchTemplate:
+    Value: !Ref ClientLaunchTemplate
+    Export:
+      Name: !Sub 'ClientLaunchTemplate'
+  ProxyEc2Instance:
+    Value: !Ref ProxyEc2Instance
+    Export:
+      Name: !Sub 'ProxyEc2Instance'
+  ClientEc2Instance:
+    Value: !Ref ClientEc2Instance
+    Export:
+      Name: !Sub 'ClientEc2Instance'

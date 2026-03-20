@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "test-alb-tg-listener"
+
+Parameters:
+  Env:
+    Type: String
+    Default: 'dev'
+    AllowedValues: ['dev', 'stg', 'prd']
+  ResourceName:
+    Type: String
+    Default: 'test-project'
+
+Resources:
+  # ------------------------------ #
+  # ApplicationLoadBalancer
+  # ------------------------------ #
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: !Join ['-', [!Ref Env, !Ref ResourceName, 'alb']]
+      Subnets:
+        - !ImportValue testPublicSubnet1a
+        - !ImportValue testPublicSubnet1c
+      SecurityGroups:
+        - !ImportValue testAlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'alb']]
+  HttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpTargetGroup
+  # ------------------------------ #
+  # TargetGroup
+  # ------------------------------ #
+  HttpTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: !Join ['-', [!Ref Env, !Ref ResourceName, 'tg']]
+      VpcId: !ImportValue testVpc
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      Targets: 
+        - Id: !ImportValue testPublicSubnet1aEc2Instance
+          Port: 80
+        - Id: !ImportValue testPublicSubnet1cEc2Instance
+          Port: 80
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'tg']]
+
+Outputs:
+  ApplicationLoadBalancer:
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub 'testApplicationLoadBalancer'

@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  "test-root-stack"
+
+Parameters: 
+  TemplateVPC:
+    Type: String
+    Default: https://dev-test-project-bucket.s3.ap-northeast-1.amazonaws.com/test-vpc-sbnt-igw-rttbl.yml
+  TemplateSG:
+    Type: String
+    Default: https://dev-test-project-bucket.s3.ap-northeast-1.amazonaws.com/test-sg.yml
+  TemplateRDS:
+    Type: String
+    Default: https://dev-test-project-bucket.s3.ap-northeast-1.amazonaws.com/test-rds.yml
+  TemplateEC2:
+    Type: String
+    Default: https://dev-test-project-bucket.s3.ap-northeast-1.amazonaws.com/test-ec2.yml
+  TemplateALB:
+    Type: String
+    Default: https://dev-test-project-bucket.s3.ap-northeast-1.amazonaws.com/test-alb-tg-listener.yml
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+
+Resources:
+  # ----------------------------------- #
+  # VPC,Subnet,igw,routetable
+  # ----------------------------------- #
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateVPC
+      Parameters:
+        Env: 'dev'
+        ResourceName: 'test-project'
+        VpcCidr: '10.0.0.0/16'
+        PublicSubnet1aCidr: '10.0.0.0/24'
+        PublicSubnet1cCidr: '10.0.2.0/24'
+        PrivateSubnet1aCidr: '10.0.1.0/24'
+        PrivateSubnet1cCidr: '10.0.3.0/24'
+  # ----------------------------------- #
+  # SG(ALB,EC2,RDS)
+  # ----------------------------------- #
+  SG:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateSG
+      Parameters: 
+        Env: 'dev'
+        ResourceName: 'test-project'
+    DependsOn: VPC
+  # ----------------------------------- #
+  # RDS
+  # ----------------------------------- #
+  RDS:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateRDS
+      Parameters: 
+        Env: 'dev'
+        ResourceName: 'test-project'
+        DBInstanceID: 'db'
+        DBName: 'mydb'
+        DBUsername: 'admin'
+        DBPassword: !Ref DBPassword
+        DBInstanceClass: 'db.t2.micro'
+        DBAllocatedStorage: 20
+        DBEngineVersion: 8.0.33
+    DependsOn: SG
+  # ----------------------------------- #
+  # EC2
+  # ----------------------------------- #
+  EC2:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateEC2
+      Parameters: 
+        Env: 'dev'
+        ResourceName: 'test-project'
+        AmiId: 'ami-05a56ce08feadf9c4'
+    DependsOn: RDS
+  # ----------------------------------- #
+  # ALB,Listener,TargetGroup
+  # ----------------------------------- #
+  ALB:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateALB
+      Parameters: 
+        Env: 'dev'
+        ResourceName: 'test-project'
+    DependsOn: EC2
+
+Outputs:
+  Vpc:
+    Value: !GetAtt VPC.Outputs.Vpc
+  Igw:
+    Value: !GetAtt VPC.Outputs.Igw
+  PublicSubnet1a:
+    Value: !GetAtt VPC.Outputs.PublicSubnet1a
+  PublicSubnet1c:
+    Value: !GetAtt VPC.Outputs.PublicSubnet1c
+  PrivateSubnet1a:
+    Value: !GetAtt VPC.Outputs.PrivateSubnet1a
+  PrivateSubnet1c:
+    Value: !GetAtt VPC.Outputs.PrivateSubnet1c
+  PublicRouteTable:
+    Value: !GetAtt VPC.Outputs.PublicRouteTable
+  AlbSecurityGroup:
+    Value: !GetAtt SG.Outputs.AlbSecurityGroup
+  EC2SecurityGroup:
+    Value: !GetAtt SG.Outputs.EC2SecurityGroup
+  DBSecurityGroup:
+    Value: !GetAtt SG.Outputs.DBSecurityGroup
+  RDSEndpoint:
+    Value: !GetAtt RDS.Outputs.RDSEndpoint
+  PublicSubnet1aEc2Instance:
+    Value: !GetAtt EC2.Outputs.PublicSubnet1aEc2Instance
+  PublicSubnet1cEc2Instance:
+    Value: !GetAtt EC2.Outputs.PublicSubnet1cEc2Instance
+  ApplicationLoadBalancer:
+    Value: !GetAtt ALB.Outputs.ApplicationLoadBalancer

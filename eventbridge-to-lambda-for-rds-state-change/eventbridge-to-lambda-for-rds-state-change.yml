@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: eventbridge-to-lambda-for-rds-state-change
+
+Parameters:
+  RestoredRdsInstaceIdentifier:
+    Type: String
+    Default: "sample-rds-001"
+  TargetLambdaName:
+    Type: String
+    Default: "sample_lambda_001"
+  Handler:
+    Type: String
+    Default: "sample_lambda_001"
+  Runtime:
+    Type: String
+    Default: "python3.10"
+
+Resources:
+  # ------------------------------ #
+  # Lambda
+  # ------------------------------ #
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !ImportValue S3BucketNameForLambdaCode
+        S3Key: !Sub "${TargetLambdaName}.zip"
+      FunctionName: !Ref TargetLambdaName
+      Handler: !Sub "${TargetLambdaName}.lambda_handler"
+      Runtime: !Ref Runtime
+      Role: !GetAtt LambdaRole.Arn
+
+  # ------------------------------ #
+  # Lambda-IAMrole
+  # ------------------------------ #
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # ------------------------------ #
+  # EventBridgeRule
+  # ------------------------------ #
+  EventRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: "eventbridge-to-lambda-for-rds-state-change"
+      EventPattern: 
+        source: 
+          - "aws.rds"
+        detail-type: 
+          - "RDS DB Instance Event"
+        detail: 
+          EventID: 
+            - "RDS-EVENT-0043"
+          SourceIdentifier:
+            - !Ref RestoredRdsInstaceIdentifier
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt Lambda.Arn 
+          Id: !Ref TargetLambdaName
+
+  # ------------------------------ #
+  # EventBridgeRule-ResourceBasePolicy
+  # ------------------------------ #
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref TargetLambdaName
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventRule.Arn

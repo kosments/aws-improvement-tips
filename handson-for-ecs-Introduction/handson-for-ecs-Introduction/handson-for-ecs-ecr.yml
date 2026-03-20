@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "handson-for-ecs-ecr"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "ecs-helloworld" 
+  # lifecyclePolicyText:
+  #   Type: String
+  #   Default: "test"
+  # registryId:
+  #   Type: String
+  #   Default: "sample"
+
+  TagApplication:
+    Type: String
+    Default: "disblog"
+  TagEnv:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  TagOwner:
+    Type: String
+    Default: "iti2"
+  TagUser:
+    Type: String
+    Default: "awsstudyadmin"
+
+Resources:
+  # ------------------------------ #
+  # ECR
+  # ------------------------------ #
+  MyRepository: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Join ['-', [!Ref Env, !Ref ResourceName, ecr]]
+      ImageTagMutability: MUTABLE
+      # LifecyclePolicy:
+      #   LifecyclePolicyText: !Ref lifecyclePolicyText
+      #   RegistryId: !Ref registryId
+      # RepositoryPolicyText: 
+      #   Version: "2012-10-17"
+      #   Statement: 
+      #     - Sid: AllowPushPull
+      #       Effect: Allow
+      #       Principal: 
+      #         AWS: 
+      #           - !Sub "arn:aws:iam::${AWS::AccountId}:user/root"
+      #       Action: 
+      #         - "ecr:GetDownloadUrlForLayer"
+      #         - "ecr:BatchGetImage"
+      #         - "ecr:BatchCheckLayerAvailability"
+      #         - "ecr:PutImage"
+      #         - "ecr:InitiateLayerUpload"
+      #         - "ecr:UploadLayerPart"
+      #         - "ecr:CompleteLayerUpload"
+      Tags:
+        - Key: Application
+          Value: !Ref TagApplication
+        - Key: Env
+          Value: !Ref TagEnv
+        - Key: Owner
+          Value: !Ref TagOwner
+        - Key: User
+          Value: !Ref TagUser
+
+Outputs:    
+  Arn:
+    Value: !GetAtt MyRepository.Arn

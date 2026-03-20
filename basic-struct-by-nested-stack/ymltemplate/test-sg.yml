@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "test-sg"
+
+Parameters:
+  Env:
+    Type: String
+    Default: 'dev'
+    AllowedValues: ['dev', 'stg', 'prd']
+  ResourceName:
+    Type: String
+    Default: 'test-project'
+
+Resources:
+  # ------------------------------ #
+  # Alb SecurityGroup
+  # ------------------------------ #
+  AlbSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-alb']]
+      GroupDescription: Security group for ALB
+      VpcId: !ImportValue testVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow all http traffic
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow all https traffic
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-alb']]
+  # ------------------------------ #
+  # EC2 SecurityGroup
+  # ------------------------------ #
+  EC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ec2']]
+      GroupDescription: Security group for WebApServerEC2
+      VpcId: !ImportValue testVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: Allow all http traffic
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: Allow all https traffic
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: Allow all ssh traffic
+      Tags:
+        - Key: Name
+          Value: !Join ['-', [!Ref Env, !Ref ResourceName, 'sg-for-ec2']]
+  # ------------------------------ #
+  # DBSecurityGroup
+  # ------------------------------ #
+  DBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupName: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'sg-for-rds']]
+      VpcId: !ImportValue testVpc
+      GroupDescription: Security group for RDSInstance
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+          Description: Allow MySQL traffic from testEC2SecurityGroup
+      Tags: 
+        - Key: Name
+          Value: !Join ['-', [!Ref 'Env', !Ref 'ResourceName', 'sg-for-rds']]
+
+Outputs:
+  AlbSecurityGroup:
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub 'testAlbSecurityGroup'
+  EC2SecurityGroup:
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub 'testEC2SecurityGroup'
+  DBSecurityGroup:
+    Value: !Ref DBSecurityGroup
+    Export:
+      Name: !Sub 'testDbSecurityGroup'

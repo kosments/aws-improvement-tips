@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  CodePipeline Stack for Auto Deployment
+  "cicd-pipeline-for-cfn-stack"
+
+Parameters:
+  Env:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "stg", "prd"]
+  ResourceName:
+    Type: String
+    Default: "cicd-pipeline"
+
+  MyCodeCommitRepoName:
+    Type: String
+    Default: "MyCodeCommitRepoName"
+  MySourceArtifact:
+    Type: String
+    Default: "SourceOutput"
+  MySourceTemplate:
+    Type: String
+    Default: "test-s3.yml"
+  ArtifactStore:
+    Type: String
+    Default: "my-pipeline-bucket-name"
+
+Resources:
+  # ------------------------------ #
+  # CodeCommitRepository
+  # ------------------------------ #
+  MyCodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref MyCodeCommitRepoName
+
+  # ------------------------------ #
+  # CodePipeline
+  # ------------------------------ #
+  MyPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: MyPipeline
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactStore
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !Ref MyCodeCommitRepoName
+                BranchName: main
+              OutputArtifacts:
+                - Name: !Ref MySourceArtifact
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: "1"
+                Provider: CloudFormation
+              Configuration:
+                StackName: !Sub "${Env}-stack-${ResourceName}"
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_IAM
+                RoleArn: !GetAtt DeployRole.Arn
+                TemplatePath: !Sub "${MySourceArtifact}::${MySourceTemplate}"
+              InputArtifacts:
+                - Name: !Ref MySourceArtifact
+
+  # ------------------------------ #
+  # CodePipeline Role
+  # ------------------------------ #
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Env}-role-codepipeline-${ResourceName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+              - codepipeline.amazonaws.com
+            Action: 
+            - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "${Env}-policy-cfn-${ResourceName}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+            - Sid: cfnaccess
+              Effect: Allow
+              Action:
+                - s3:*
+                - cloudformation:CreateStack
+                - cloudformation:DescribeStacks
+                - cloudformation:DeleteStack
+                - cloudformation:UpdateStack
+                - cloudformation:CreateChangeSet
+                - cloudformation:ExecuteChangeSet
+                - cloudformation:DeleteChangeSet
+                - cloudformation:DescribeChangeSet
+                - cloudformation:SetStackPolicy
+                - iam:PassRole
+                - sns:Publish
+              Resource: '*'
+        - PolicyName: !Sub "${Env}-policy-codecommit-${ResourceName}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: codecommitaccess
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !GetAtt MyCodeCommitRepository.Arn
+
+  # ------------------------------ #
+  # CodePipeline DeployRole
+  # ------------------------------ #
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Env}-role-deploy-${ResourceName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - cloudformation.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "${Env}-policy-deploy-${ResourceName}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: deploycfn
+                Effect: Allow
+                Action:
+                  - s3:*
+                  - iam:*
+                Resource: '*'
